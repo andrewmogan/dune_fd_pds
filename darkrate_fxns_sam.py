@@ -1,4 +1,5 @@
 import numpy as np
+import math
 from darkrate_consts_sam import *
 
 def readfile(filepath):
@@ -25,30 +26,57 @@ def readfile(filepath):
 def findcandidates(ts, Vs1):
     t_spacing = ts[1] - ts[0]
     npoints_window = int(t_window*1e-6/t_spacing) # number of points in window
-    photon_candidates = []
+    #print("npoints per window = ", npoints_window)
+    all_integrals = []
+    window_start_indices = []
+    window_end_indices = []
+    darkcount = 0
+    # roll through data with a specified time window, take integrals and look for single photon candidates
+    index_start = 0
+    while index_start < (len(ts) - npoints_window):
+        ts_sel = ts[index_start:(index_start + npoints_window)]
+        Vs1_sel = Vs1[index_start:(index_start + npoints_window)]
+        trace_integral = np.trapz(Vs1_sel, x=ts_sel)
+        # only if integral is above the threshold and candidates are set to be accepted
+        if trace_integral > V_threshold*1e-9:
+            # only iterate dark count when integral is above threshold
+            darkcount += 1
+            all_integrals.append(trace_integral)
+            window_start_indices.append(index_start)
+            window_end_indices.append(index_start+npoints_window)
+            #index_start += 1
+            if t_buffer != 0:
+                index_start += int(t_buffer*1e-6/t_spacing) 
+            else: 
+                index_start += 1
+        else:
+            # keep all integrals to see full spectrum of integrals
+            all_integrals.append(trace_integral)
+            window_start_indices.append(index_start)
+            window_end_indices.append(index_start+npoints_window)
+            index_start += 1
+        
 
-    # for including a buffer zone after each first photon candidate
-    keepCandidate = True
-    keepCandidate_starttime = 0
-    keepCandidate_timesincestart = 0
+    return darkcount, np.array(all_integrals), np.array(window_start_indices), np.array(window_end_indices)
+
+# function list indices of the windows that exceed integral threshold
+def findwindows(ts, Vs1):
+    t_spacing = ts[1] - ts[0]
+    npoints_window = int(t_window*1e-6/t_spacing) # number of points in window
+    window_start_indices = []
+    window_end_indices = []
+
     # roll through data with a specified time window, take integrals and look for single photon candidates
     for index_start in range(0, len(ts) - npoints_window):
         ts_sel = ts[index_start:(index_start + npoints_window)]
         Vs1_sel = Vs1[index_start:(index_start + npoints_window)]
         trace_integral = np.trapz(Vs1_sel, x=ts_sel)
         # only if integral is above the threshold and candidates are set to be accepted
-        if trace_integral > V_threshold*1e-9 and keepCandidate == True:
-            photon_candidates.append(trace_integral)
-            keepCandidate == False
-            keepCandidate_starttime = ts[index_start]
-        # only happens after first accepted integral, increments time since start
-        elif keepCandidate == False and keepCandidate_timesincestart < t_buffer*1e-6:
-            keepCandidate_timesincestart += t_spacing 
-        # only happens once the start of the interval surpasses buffer: candidates now set to be accepted
-        elif keepCandidate == False and keepCandidate_timesincestart > t_buffer*1e-6:
-            keepCandidate = True
+        if np.abs(trace_integral) > V_threshold*1e-9:
+            window_start_indices.append(index_start)
+            window_end_indices.append(index_start+npoints_window)
 
-    return photon_candidates
+    return window_start_indices, window_end_indices
 
 # get times and voltages for a specified csv file
 def getData(filepath):
